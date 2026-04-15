@@ -1,0 +1,33 @@
+#include <stdio.h>
+#include <omp.h>
+
+int main() {
+    int n, i, thread_count;
+    double dot_product = 0.0;
+    printf("Enter the size of the vectors: ");
+    scanf("%d", &n);
+    double vecA[n], vecB[n];
+    printf("Enter Thread Count: ");
+    scanf("%d", &thread_count);
+    for(i = 0; i < n; i++) {
+        vecA[i] = i + 1.0; 
+        vecB[i] = 2.0;     
+    }
+
+    printf("\nStep 1: Calculating individual products and summing them up...\n");
+    #pragma omp parallel for num_threads(thread_count) reduction(+:dot_product)
+    for(i = 0; i < n; i++) {
+        double prod = vecA[i] * vecB[i];
+        #pragma omp critical
+        {
+            printf("Thread %d: vecA[%d](%.2f) * vecB[%d](%.2f) = %.2f\n", 
+                    omp_get_thread_num(), i, vecA[i], i, vecB[i], prod);
+        }
+
+        dot_product += prod;
+    }
+    printf("\nStep 2: Final Result\n");
+    printf("The Dot Product is: %.2f\n", dot_product);
+
+    return 0;
+}
