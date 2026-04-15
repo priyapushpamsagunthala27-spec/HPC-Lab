@@ -1,0 +1,122 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <string.h>
+#include <time.h>
+
+#define BUFFER_SIZE 5
+#define TOTAL_STRINGS 20
+#define MAX_STR_LEN 15
+
+// Task structure
+typedef struct {
+    char data[MAX_STR_LEN + 1];
+    int task_type; 
+} StringTask;
+StringTask work_buffer[BUFFER_SIZE];
+int in = 0;
+int out = 0;
+int processed_count = 0;
+sem_t empty;
+sem_t full;
+pthread_mutex_t mutex;
+FILE *fp;
+void generate_string(char *str) {
+    int len = (rand() % 5) + 5; 
+    for (int i = 0; i < len; i++) {
+        str[i] = 'a' + (rand() % 26);
+    }
+    str[len] = '\0';
+}
+void *server(void *arg) {
+    for (int i = 0; i < TOTAL_STRINGS; i++) {
+        StringTask t;
+        generate_string(t.data);
+        t.task_type = rand() % 3;
+
+        sem_wait(&empty);
+        pthread_mutex_lock(&mutex);
+
+        work_buffer[in] = t;
+        printf("[Server] Produced: %s (Type: %d)\n", t.data, t.task_type);
+        in = (in + 1) % BUFFER_SIZE;
+
+        pthread_mutex_unlock(&mutex);
+        sem_post(&full);
+    }
+    pthread_exit(NULL);
+}
+void *worker(void *arg) {
+    int thread_id = *(int*)arg;
+
+    while (1) {
+        sem_wait(&full);
+        pthread_mutex_lock(&mutex);
+        StringTask t = work_buffer[out];
+        out = (out + 1) % BUFFER_SIZE;
+        processed_count++;
+        pthread_mutex_unlock(&mutex);
+        sem_post(&empty);
+        char result[200];
+        if (t.task_type == 0) {
+            char rev[MAX_STR_LEN + 1];
+            int len = strlen(t.data);
+            for (int i = 0; i < len; i++) rev[i] = t.data[len - 1 - i];
+            rev[len] = '\0';
+            sprintf(result, "Thread %d [REVERSE]: %s -> %s\n", thread_id, t.data, rev);
+        }
+        else if (t.task_type == 1) {
+            int len = strlen(t.data);
+            int is_pal = 1;
+            for (int i = 0; i < len / 2; i++) {
+                if (t.data[i] != t.data[len - 1 - i]) {
+                    is_pal = 0;
+                    break;
+                }
+            }
+            sprintf(result, "Thread %d [PALINDROME]: %s -> %s\n", thread_id, t.data, is_pal ? "YES" : "NO");
+        }
+        else {
+            int count = 0;
+            for (int i = 0; t.data[i]; i++) {
+                if (t.data[i] == 'a') count++;
+            }
+            sprintf(result, "Thread %d [FREQ of 'a']: %s -> %d\n", thread_id, t.data, count);
+        }
+
+        // Print and Save to file
+        printf("%s", result);
+        pthread_mutex_lock(&mutex);
+        fprintf(fp, "%s", result);
+        pthread_mutex_unlock(&mutex);
+    }
+    pthread_exit(NULL);
+}
+
+int main() {
+    pthread_t server_thread, w1, w2, w3;
+    int id1 = 1, id2 = 2, id3 = 3;
+    srand(time(NULL));
+    fp = fopen("result.txt", "w");
+    if (!fp) return 1;
+    sem_init(&empty, 0, BUFFER_SIZE);
+    sem_init(&full, 0, 0);
+    pthread_mutex_init(&mutex, NULL);
+    pthread_create(&server_thread, NULL, server, NULL);
+    pthread_create(&w1, NULL, worker, &id1);
+    pthread_create(&w2, NULL, worker, &id2);
+    pthread_create(&w3, NULL, worker, &id3);
+    pthread_join(server_thread, NULL);
+    pthread_join(w1, NULL);
+    pthread_join(w2, NULL);
+    pthread_join(w3, NULL);
+    fclose(fp);
+    sem_destroy(&empty);
+    sem_destroy(&full);
+    pthread_mutex_destroy(&mutex);
+
+    printf("\nAll strings processed. Check result.txt\n");
+    return 0;
+}
+
